@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>QR Code Tool - 结果</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+      padding: 24px;
+      max-width: 440px;
+      width: 100%;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .header h2 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+    .content-box {
+      word-break: break-all;
+      background: #f9f9f9;
+      padding: 12px;
+      border-radius: 8px;
+      color: #333;
+      font-size: 14px;
+      line-height: 1.5;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .qr-display {
+      text-align: center;
+      margin: 16px 0;
+    }
+    .qr-display img {
+      width: 240px;
+      height: 240px;
+      image-rendering: pixelated;
+      border-radius: 4px;
+    }
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .btn-primary {
+      background: #4a90d9;
+      color: #fff;
+    }
+    .btn-success {
+      background: #34a853;
+      color: #fff;
+    }
+    .btn-outline {
+      background: #fff;
+      color: #666;
+      border: 1px solid #ddd;
+    }
+    .btn-danger {
+      background: #d32f2f;
+      color: #fff;
+    }
+    .error-text {
+      color: #d32f2f;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div id="result-container"></div>
+  </div>
+  <script>
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/\n/g, '<br>');
+    }
+
+    function render() {
+      const hash = decodeURIComponent(location.hash.replace(/^#/, '') || '{}');
+      let result;
+      try {
+        result = JSON.parse(hash);
+      } catch (e) {
+        result = { type: 'error', content: '无效的结果数据' };
+      }
+
+      const container = document.getElementById('result-container');
+      let html = '';
+
+      if (result.type === 'decode') {
+        const isUrl = /^https?:\/\//i.test(result.content);
+        html = `
+          <div class="header">
+            <h2>✅ 二维码解析结果</h2>
+          </div>
+          <div class="content-box">${escapeHtml(result.content)}</div>
+          <div class="btn-group">
+            <button class="btn btn-primary" id="copy-btn">📋 复制内容</button>
+            ${isUrl ? '<button class="btn btn-success" id="open-btn">🔗 打开链接</button>' : ''}
+          </div>
+        `;
+      } else if (result.type === 'generate') {
+        html = `
+          <div class="header">
+            <h2>🔲 二维码</h2>
+          </div>
+          <div class="qr-display">
+            <img src="${result.qrDataUrl}" alt="QR Code">
+          </div>
+          <div class="content-box">${escapeHtml(result.content)}</div>
+          <div class="btn-group">
+            <button class="btn btn-primary" id="copy-btn">📋 复制内容</button>
+            <button class="btn btn-outline" id="download-btn">💾 保存二维码</button>
+          </div>
+        `;
+      } else {
+        html = `
+          <div class="header">
+            <h2>❌ 错误</h2>
+          </div>
+          <div class="error-text">${escapeHtml(result.content)}</div>
+        `;
+      }
+
+      container.innerHTML = html;
+
+      // Copy
+      const copyBtn = document.getElementById('copy-btn');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(result.content);
+            copyBtn.textContent = '✅ 已复制!';
+            setTimeout(() => copyBtn.textContent = '📋 复制内容', 1500);
+          } catch (e) {
+            const ta = document.createElement('textarea');
+            ta.value = result.content;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            copyBtn.textContent = '✅ 已复制!';
+            setTimeout(() => copyBtn.textContent = '📋 复制内容', 1500);
+          }
+        });
+      }
+
+      // Open link
+      const openBtn = document.getElementById('open-btn');
+      if (openBtn) {
+        openBtn.addEventListener('click', () => {
+          window.open(result.content, '_blank');
+        });
+      }
+
+      // Download
+      const downloadBtn = document.getElementById('download-btn');
+      if (downloadBtn) {
+        downloadBtn.addEventListener('click', () => {
+          const a = document.createElement('a');
+          a.href = result.qrDataUrl;
+          a.download = 'qrcode.png';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          downloadBtn.textContent = '✅ 已保存';
+          setTimeout(() => downloadBtn.textContent = '💾 保存二维码', 1500);
+        });
+      }
+    }
+
+    render();
+    window.addEventListener('hashchange', render);
+  </script>
+</body>
+</html>

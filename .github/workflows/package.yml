@@ -1,0 +1,66 @@
+name: Build & Package
+
+on:
+  push:
+    tags:
+      - 'v*'          # v1.0.0, v1.1.0, …
+  workflow_dispatch:   # 手动触发
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.0)'
+        required: false
+        type: string
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}"
+            echo "version=${{ inputs.version }}" >> $GITHUB_ENV
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${{ github.ref_name }}"
+            echo "version=${{ github.ref_name }}" >> $GITHUB_ENV
+          else
+            echo "version=v1.0.0"
+            echo "version=v1.0.0" >> $GITHUB_ENV
+          fi
+
+      - name: Package extension
+        run: |
+          echo "Packaging version: ${{ env.version }}"
+          PKG_NAME="qrcode-extension-${{ env.version }}.zip"
+          
+          # 打包扩展，排除不必要文件
+          zip -r "${PKG_NAME}" . \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x "*.gitignore" \
+            -x "*.md" \
+            -x "AGENTS.md" \
+            -x "LICENSE" \
+            -x "tmp/*"
+          
+          echo "Package: ${PKG_NAME} ($(du -h "${PKG_NAME}" | cut -f1))"
+          echo "pkg_name=${PKG_NAME}" >> $GITHUB_ENV
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name != 'workflow_dispatch' || github.ref_type == 'tag'
+        with:
+          tag_name: ${{ env.version }}
+          name: "QR Code Tool ${{ env.version }}"
+          body_path: CHANGELOG.md
+          files: |
+            qrcode-extension-${{ env.version }}.zip
+          generate_release_notes: false
+          make_latest: true

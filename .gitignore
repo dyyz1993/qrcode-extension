@@ -1,0 +1,24 @@
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Test files
+/tmp/
+tmp/
+
+# Build output
+*.zip
+*.crx
+*.pem
+
+# Dependencies (vendored, not downloaded)
+# lib/ is vendored, not gitignored
