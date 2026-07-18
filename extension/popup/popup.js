@@ -122,25 +122,29 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch { return false; }
   }
 
-  // 把检测到的图片 URL 塞进图片 Tab，等用户点按钮上传
+  // 检测到图片 URL，直接抓图 + 上传 + 出二维码（全自动，无需用户点按钮）
   function offerImageFromUrl(url) {
+    // 切到图片 Tab，显示加载状态
     document.querySelector('.tab[data-tab="image"]').click();
-    // 显示提示，但不自动上传（让用户主动确认）
-    setImgStatus('🔎 检测到当前页是图片，点下方按钮上传', 'loading');
-    imgGenerateBtn.disabled = false;
+    setImgStatus('🔎 识别为图片，正在自动上传...', 'loading');
+    imgGenerateBtn.disabled = true;
+    imgGenerateBtn.textContent = '⏳ 自动上传中...';
 
-    // 构造一个"待上传"状态：用一个标志变量告诉 generateBtn，下次点击时 fetch 这个 URL
+    // 设置 pendingImageUrl 然后直接触发上传
     pendingImageUrl = url;
 
-    // 预览：直接用 URL 当 img src 显示（可能因为防盗链失败，给 onerror 兜底）
+    // 预览：直接用 URL 当 img src（失败也不影响上传，给 onerror 兜底）
     imgPreview.onerror = () => {
       imgPreview.style.display = 'none';
       imgPreviewPlaceholder.style.display = 'block';
-      imgPreviewPlaceholder.innerHTML = '📁 图片预览不可用<br><span style="font-size:11px;color:#bbb;">（可能被防盗链拦截，但 SW 仍可尝试上传）</span>';
+      imgPreviewPlaceholder.innerHTML = '📁 预览不可用<br><span style="font-size:11px;color:#bbb;">（可能防盗链，但 SW 仍会尝试抓取）</span>';
     };
     imgPreview.src = url;
     imgPreview.style.display = 'block';
     imgPreviewPlaceholder.style.display = 'none';
+
+    // 直接调用上传，不等用户
+    uploadImageAndGenerate();
   }
 
   // 获取当前标签页 URL 并生成二维码
