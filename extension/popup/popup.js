@@ -124,6 +124,8 @@ document.addEventListener('DOMContentLoaded', () => {
       setStatus('请输入文本', 'error');
       return;
     }
+    // 上传前重新读一次配置（用户可能在设置页改过）
+    await loadConfig();
     if (!BASE_URL) {
       setStatus('⚠️ 请点右上角 ⚙️ 配置服务器地址', 'error');
       return;
@@ -206,6 +208,180 @@ document.addEventListener('DOMContentLoaded', () => {
       document.body.removeChild(ta);
       copyLinkBtn.textContent = '✅';
       setTimeout(() => { copyLinkBtn.textContent = '📋'; }, 1500);
+    }
+  });
+
+  // 文本 Tab 粘贴图片：自动切到图片 Tab
+  textInput.addEventListener('paste', (e) => {
+    const item = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith('image/'));
+    if (item) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) switchToImageTabWithFile(file);
+    }
+  });
+
+  // ====== Tab 3: 图片上传 ======
+  const imgFileInput = document.getElementById('img-file-input');
+  const imgPreviewArea = document.getElementById('img-preview-area');
+  const imgPreviewPlaceholder = document.getElementById('img-preview-placeholder');
+  const imgPreview = document.getElementById('img-preview');
+  const imgGenerateBtn = document.getElementById('img-generate-btn');
+  const imgStatus = document.getElementById('img-status');
+  const imgQrImg = document.getElementById('img-qr-img');
+  const imgQrLoading = document.getElementById('img-qr-loading');
+  const imgShortLinkRow = document.getElementById('img-short-link-row');
+  const imgShortUrlEl = document.getElementById('img-short-url');
+  const imgCopyLinkBtn = document.getElementById('img-copy-link-btn');
+
+  const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+  let currentImageFile = null;
+
+  function setImgStatus(text, type) {
+    imgStatus.textContent = text;
+    imgStatus.className = 'status-row' + (type ? ' ' + type : '');
+  }
+
+  // 在文本 Tab 粘贴图片时被调用
+  function switchToImageTabWithFile(file) {
+    document.querySelector('.tab[data-tab="image"]').click();
+    setImageFile(file);
+  }
+
+  function setImageFile(file) {
+    // 校验
+    if (!file.type.startsWith('image/')) {
+      setImgStatus('⚠️ 只支持图片文件', 'error');
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      setImgStatus('⚠️ 图片过大（上限 5MB），当前 ' + (file.size / 1024 / 1024).toFixed(1) + 'MB', 'error');
+      return;
+    }
+    currentImageFile = file;
+    // 显示预览
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      imgPreview.src = e.target.result;
+      imgPreview.style.display = 'block';
+      imgPreviewPlaceholder.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+    imgGenerateBtn.disabled = false;
+    const sizeStr = file.size > 1024 * 1024
+      ? (file.size / 1024 / 1024).toFixed(1) + 'MB'
+      : Math.round(file.size / 1024) + 'KB';
+    setImgStatus(`✅ 已选择：${file.name || '粘贴的图片'} (${sizeStr})`, 'success');
+    // 清空之前的结果
+    imgQrImg.style.display = 'none';
+    imgShortLinkRow.style.display = 'none';
+  }
+
+  // 点击预览区 → 触发文件选择
+  imgPreviewArea.addEventListener('click', () => imgFileInput.click());
+  imgFileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setImageFile(e.target.files[0]);
+    }
+  });
+
+  // 图片 Tab 也支持 paste
+  imgPreviewArea.addEventListener('paste', (e) => {
+    const item = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith('image/'));
+    if (item) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) setImageFile(file);
+    }
+  });
+
+  // 拖拽支持
+  imgPreviewArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    imgPreviewArea.classList.add('dragover');
+  });
+  imgPreviewArea.addEventListener('dragleave', () => {
+    imgPreviewArea.classList.remove('dragover');
+  });
+  imgPreviewArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    imgPreviewArea.classList.remove('dragover');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      setImageFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  async function uploadImageAndGenerate() {
+    if (!currentImageFile) {
+      setImgStatus('请先选择图片', 'error');
+      return;
+    }
+    // 上传前重新读一次配置（用户可能在设置页改过）
+    await loadConfig();
+    if (!BASE_URL) {
+      setImgStatus('⚠️ 请点右上角 ⚙️ 配置服务器地址', 'error');
+      return;
+    }
+
+    imgGenerateBtn.disabled = true;
+    imgGenerateBtn.textContent = '⏳ 上传中...';
+    setImgStatus('正在上传图片...', 'loading');
+    imgQrLoading.style.display = 'flex';
+    imgQrImg.style.display = 'none';
+    imgShortLinkRow.style.display = 'none';
+
+    try {
+      const fd = new FormData();
+      fd.append('image', currentImageFile);
+      const resp = await fetch(BASE_URL + '/api/upload', {
+        method: 'POST',
+        headers: { 'X-Auth-Token': AUTH_TOKEN },
+        body: fd
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.message || 'HTTP ' + resp.status);
+      }
+
+      const data = await resp.json();
+      const shortURL = data.url || (BASE_URL + '/s/' + data.code);
+
+      setImgStatus('✅ 已生成，扫码可看图（手机长按可保存）', 'success');
+      imgQrLoading.style.display = 'none';
+      generateQR(shortURL, imgQrImg, imgQrLoading);
+
+      imgShortUrlEl.textContent = shortURL;
+      imgShortUrlEl.href = shortURL;
+      imgShortLinkRow.style.display = 'flex';
+    } catch (err) {
+      imgQrLoading.style.display = 'none';
+      setImgStatus('❌ 上传失败：' + err.message + '（图片功能需要服务端）', 'error');
+    } finally {
+      imgGenerateBtn.disabled = false;
+      imgGenerateBtn.textContent = '🔲 生成二维码';
+    }
+  }
+
+  imgGenerateBtn.addEventListener('click', uploadImageAndGenerate);
+
+  // 图片 Tab 复制短链
+  imgCopyLinkBtn.addEventListener('click', async () => {
+    const url = imgShortUrlEl.textContent;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      imgCopyLinkBtn.textContent = '✅';
+      setTimeout(() => { imgCopyLinkBtn.textContent = '📋'; }, 1500);
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      imgCopyLinkBtn.textContent = '✅';
+      setTimeout(() => { imgCopyLinkBtn.textContent = '📋'; }, 1500);
     }
   });
 });

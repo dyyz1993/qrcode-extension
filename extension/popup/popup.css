@@ -273,3 +273,43 @@ body {
 .copy-link-btn:hover {
   background: #eee;
 }
+
+/* ===== 图片 Tab ===== */
+.preview-area {
+  width: 100%;
+  min-height: 120px;
+  border: 1px dashed #ddd;
+  border-radius: 8px;
+  background: #fafafa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  overflow: hidden;
+  padding: 8px;
+}
+
+.preview-area:hover {
+  border-color: #4a90d9;
+  background: #f5f9ff;
+}
+
+.preview-area.dragover {
+  border-color: #4a90d9;
+  background: #eaf2ff;
+}
+
+.preview-placeholder {
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.img-preview {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 4px;
+  display: block;
+}

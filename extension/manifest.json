@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "QR Code Tool",
-  "version": "1.1.1",
-  "description": "二维码生成与解析工具 - 支持右键解析图片中的二维码，以及为URL/文本生成二维码",
+  "version": "1.2.0",
+  "description": "二维码生成与解析工具 - 支持文本/图片转短链二维码、右键解析图片中的二维码",
   "permissions": [
     "contextMenus",
     "activeTab",

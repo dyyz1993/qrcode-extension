@@ -12,6 +12,7 @@
       <div class="tabs">
         <button class="tab active" data-tab="link">🔗 链接</button>
         <button class="tab" data-tab="text">📝 文本</button>
+        <button class="tab" data-tab="image">📷 图片</button>
       </div>
       <button class="settings-btn" id="settings-btn" title="设置">⚙️</button>
     </div>
@@ -48,6 +49,32 @@
         <span class="short-label">短链:</span>
         <a href="#" class="short-url" id="short-url" target="_blank"></a>
         <button class="copy-link-btn" id="copy-link-btn" title="复制短链">📋</button>
+      </div>
+    </div>
+
+    <!-- Tab 3: 图片上传 -->
+    <div class="tab-panel" id="panel-image">
+      <div class="url-section">
+        <label class="label">上传图片，生成扫码看图二维码</label>
+        <input type="file" id="img-file-input" accept="image/*" style="display:none;">
+        <div class="preview-area" id="img-preview-area">
+          <div class="preview-placeholder" id="img-preview-placeholder">
+            📁 点击选择图片<br>
+            <span style="font-size:11px;color:#bbb;">或在此区域 Ctrl+V 粘贴截图</span>
+          </div>
+          <img id="img-preview" class="img-preview" alt="预览" style="display:none;">
+        </div>
+      </div>
+      <button class="generate-btn" id="img-generate-btn" disabled>🔲 生成二维码</button>
+      <div class="status-row" id="img-status"></div>
+      <div class="qr-section">
+        <div class="qr-placeholder" id="img-qr-loading" style="display:none;">生成中...</div>
+        <img id="img-qr-img" class="qr-img" alt="QR Code" style="display:none;">
+      </div>
+      <div class="short-link-row" id="img-short-link-row" style="display:none;">
+        <span class="short-label">短链:</span>
+        <a href="#" class="short-url" id="img-short-url" target="_blank"></a>
+        <button class="copy-link-btn" id="img-copy-link-btn" title="复制短链">📋</button>
       </div>
     </div>
   </div>

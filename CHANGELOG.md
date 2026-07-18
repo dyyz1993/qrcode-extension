@@ -1,6 +1,41 @@
 # Changelog
 
 
+## [1.2.0] - 2026-07-19
+
+### ✨ 新增：图片上传 → 扫码看图
+
+支持三种入口上传图片，生成短链二维码，手机扫码打开图片页（长按可保存）。
+
+- **popup 新增「📷 图片」Tab**
+  - 「📁 选择图片」按钮 + 拖拽上传
+  - 在 Tab 内 Ctrl+V 粘贴截图（支持系统截屏）
+  - 选完显示预览 + 大小提示，5MB 上限
+- **「📝 文本」Tab 粘贴图片自动切换**
+  - 在文本框粘贴图片时，自动切到图片 Tab 走上传流程
+- **右键网页图片 → 「📷 此图传到服务器生成二维码」**
+  - 利用 SW fetch 绕过 CORS 和多数防盗链（请求带着页面 Cookie/Referer）
+  - 对服务器来说请求就像来自当前浏览器，大多数图床都能抓到
+
+### 🖥️ 服务端：图片存储端点
+
+- 新增 `POST /api/upload` — multipart 图片上传，返回短码（每 IP 每分钟 5 次频率限制）
+- 新增 `GET /img/:code` — 返回原始图片二进制，带正确 Content-Type + 缓存头
+- 新增 `GET /s/:code`（按类型分派）—— 图片类型返回带 `<img>` 的展示页 + 右上角「💾 保存」按钮
+- 支持 PNG/JPEG/GIF/WebP/BMP（SVG 暂不支持，安全考虑）
+- 服务端用 `http.DetectContentType` 嗅探真实 MIME（防伪造扩展名）
+- 存储分层：元数据在 `links.json`，图片二进制在 `data/images/<code>.<ext>`
+- 7 天过期，过期/惰性清理同步删文件
+- 大小硬限 5MB（前端 + 后端双校验）
+
+### 🔧 改进
+
+- `config.js` 同时挂载到 `window` 和 `self`，支持 Service Worker 加载
+- popup.js 在 shorten/upload 前重新读一次配置（用户在设置页改的值立即生效）
+- background.js 新增 `loadConfig()`，SW 也能读 `chrome.storage.sync` 里的配置
+
+---
+
 ## [1.1.1] - 2026-07-18
 
 ### ✨ 新增：设置页（Options Page）

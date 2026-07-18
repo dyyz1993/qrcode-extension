@@ -28,6 +28,11 @@ chrome.contextMenus.removeAll(() => {
     title: '为当前页面生成二维码',
     contexts: ['page']
   });
+  chrome.contextMenus.create({
+    id: 'upload-image-short',
+    title: '📷 此图传到服务器生成二维码',
+    contexts: ['image']
+  });
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -60,7 +65,21 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-importScripts('lib/jsQR.js', 'lib/qrcode.min.js');
+importScripts('lib/jsQR.js', 'lib/qrcode.min.js', 'config.js');
+
+// 读取服务端配置（storage 优先，fallback 到 config.js 默认值）
+// SW 没有 window，config.js 把默认值挂在 window 上，SW 里用 self 访问
+function loadConfig() {
+  return new Promise((resolve) => {
+    const defaults = self.QR_CONFIG || { BASE_URL: '', AUTH_TOKEN: '' };
+    chrome.storage.sync.get(['baseUrl', 'authToken'], (result) => {
+      resolve({
+        baseUrl: (result.baseUrl !== undefined ? result.baseUrl : defaults.BASE_URL).replace(/\/+$/, ''),
+        authToken: result.authToken !== undefined ? result.authToken : defaults.AUTH_TOKEN
+      });
+    });
+  });
+}
 
 // 处理右键菜单点击
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -79,6 +98,9 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       break;
     case 'generate-qr-page':
       handleGenerateQR(tab.url, tab);
+      break;
+    case 'upload-image-short':
+      handleUploadImage(info.srcUrl, tab);
       break;
   }
 });
@@ -181,6 +203,70 @@ async function handleGenerateQR(content, tab) {
     });
   } catch (err) {
     showResult(tab, { type: 'error', content: '生成失败: ' + err.message });
+  }
+}
+
+// 把图片 URL 传到服务器，生成短链二维码（SW fetch 拿 blob，能绕大多数防盗链）
+async function handleUploadImage(imageUrl, tab) {
+  try {
+    if (!imageUrl) {
+      showResult(tab, { type: 'error', content: '无法获取图片 URL' });
+      return;
+    }
+
+    const cfg = await loadConfig();
+    if (!cfg.baseUrl) {
+      showResult(tab, { type: 'error', content: '请先在扩展设置页 ⚙️ 配置服务器地址' });
+      return;
+    }
+
+    // 1. SW fetch 拿图片 blob（继承页面 Cookie/Referer，绕过多数防盗链）
+    const imgResp = await fetch(imageUrl);
+    if (!imgResp.ok) {
+      showResult(tab, { type: 'error', content: '图片获取失败 (HTTP ' + imgResp.status + ')' });
+      return;
+    }
+    const blob = await imgResp.blob();
+    if (blob.size > 5 * 1024 * 1024) {
+      showResult(tab, { type: 'error', content: '图片过大（上限 5MB），当前 ' + (blob.size / 1024 / 1024).toFixed(1) + 'MB' });
+      return;
+    }
+
+    // 2. FormData 上传到服务端
+    const fd = new FormData();
+    // 给 blob 一个文件名，方便服务端识别（Go 端会再嗅探 MIME）
+    const ext = (blob.type.split('/')[1] || 'png').split(';')[0];
+    fd.append('image', blob, 'shared.' + ext);
+
+    const upResp = await fetch(cfg.baseUrl + '/api/upload', {
+      method: 'POST',
+      headers: { 'X-Auth-Token': cfg.authToken },
+      body: fd
+    });
+    if (!upResp.ok) {
+      const errData = await upResp.json().catch(() => ({}));
+      throw new Error(errData.message || 'HTTP ' + upResp.status);
+    }
+    const data = await upResp.json();
+    const shortURL = data.url || (cfg.baseUrl + '/s/' + data.code);
+
+    // 3. 用短链 URL 生成二维码（SW 里直接调 qrcode）
+    const qr = qrcode(0, 'M');
+    qr.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+    qr.addData(shortURL);
+    qr.make();
+    const m = qr.createImgTag(8, 4).match(/src="([^"]+)"/);
+    const qrDataUrl = m ? m[1] : '';
+
+    showResult(tab, {
+      type: 'generate',
+      content: shortURL,
+      qrDataUrl: qrDataUrl
+    });
+  } catch (err) {
+    const msg = err.message || String(err);
+    const hint = /Failed to fetch|NetworkError/.test(msg) ? '\n（可能被防盗链拦截，或网络问题）' : '';
+    showResult(tab, { type: 'error', content: '上传失败: ' + msg + hint });
   }
 }
 
