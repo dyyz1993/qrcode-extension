@@ -160,9 +160,9 @@ document.addEventListener('DOMContentLoaded', () => {
     shortenAndGenerate(textInput.value);
   });
 
-  // Ctrl/Cmd + Enter 触发
+  // Enter 触发生成；Shift+Enter 换行（textarea 默认行为）
   textInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       shortenAndGenerate(textInput.value);
     }
