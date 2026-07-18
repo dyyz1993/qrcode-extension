@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>QR Code Tool</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Tab 栏 -->
+    <div class="tabs">
+      <button class="tab active" data-tab="link">🔗 链接</button>
+      <button class="tab" data-tab="text">📝 文本</button>
+    </div>
+
+    <!-- Tab 1: 链接（原逻辑） -->
+    <div class="tab-panel active" id="panel-link">
+      <div class="url-section">
+        <label class="label">URL / 文本</label>
+        <input type="text" id="url-input"
+               placeholder="输入链接或文本，按回车生成二维码"
+               autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="qr-section" id="qr-section">
+        <div class="qr-placeholder" id="qr-loading">生成二维码中...</div>
+        <img id="qr-img" class="qr-img" alt="QR Code" style="display:none;">
+      </div>
+    </div>
+
+    <!-- Tab 2: 文本转短链 -->
+    <div class="tab-panel" id="panel-text">
+      <div class="url-section">
+        <label class="label">粘贴文本（自动转短链二维码）</label>
+        <textarea id="text-input"
+                  placeholder="粘贴任意文本，按 Ctrl+Enter 生成短链二维码&#10;手机扫码后可一键复制这段文本"
+                  rows="4" spellcheck="false"></textarea>
+      </div>
+      <div class="status-row" id="text-status"></div>
+      <div class="qr-section">
+        <div class="qr-placeholder" id="text-qr-loading" style="display:none;">生成中...</div>
+        <img id="text-qr-img" class="qr-img" alt="QR Code" style="display:none;">
+      </div>
+      <div class="short-link-row" id="short-link-row" style="display:none;">
+        <span class="short-label">短链:</span>
+        <a href="#" class="short-url" id="short-url" target="_blank"></a>
+        <button class="copy-link-btn" id="copy-link-btn" title="复制短链">📋</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../lib/qrcode.min.js"></script>
+  <script src="../config.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

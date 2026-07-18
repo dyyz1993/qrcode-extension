@@ -39,17 +39,13 @@ jobs:
         run: |
           echo "Packaging version: ${{ env.version }}"
           PKG_NAME="qrcode-extension-${{ env.version }}.zip"
-          
-          # 打包扩展，排除不必要文件
-          zip -r "${PKG_NAME}" . \
-            -x ".git/*" \
-            -x ".github/*" \
-            -x "*.gitignore" \
-            -x "*.md" \
-            -x "AGENTS.md" \
-            -x "LICENSE" \
-            -x "tmp/*"
-          
+
+          # 只打包 extension/ 目录（服务端代码不进扩展包）
+          cd extension
+          zip -r "../${PKG_NAME}" . \
+            -x "*.gitignore"
+
+          cd ..
           echo "Package: ${PKG_NAME} ($(du -h "${PKG_NAME}" | cut -f1))"
           echo "pkg_name=${PKG_NAME}" >> $GITHUB_ENV
 

@@ -20,5 +20,11 @@ tmp/
 *.crx
 *.pem
 
+# Go 服务端构建产物
+server/qrcode-server
+server/qrcode-server-*
+server/data/
+server/.env
+
 # Dependencies (vendored, not downloaded)
 # lib/ is vendored, not gitignored
