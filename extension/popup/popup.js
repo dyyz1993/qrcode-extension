@@ -124,8 +124,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 检测到图片 URL，直接抓图 + 上传 + 出二维码（全自动，无需用户点按钮）
   function offerImageFromUrl(url) {
-    // 切到图片 Tab，显示加载状态
+    // 切到图片 Tab，进入 compact 模式（预览缩小，二维码优先可见）
     document.querySelector('.tab[data-tab="image"]').click();
+    document.body.classList.add('compact');
     setImgStatus('🔎 识别为图片，正在自动上传...', 'loading');
     imgGenerateBtn.disabled = true;
     imgGenerateBtn.textContent = '⏳ 自动上传中...';
@@ -342,6 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     currentImageFile = file;
     pendingImageUrl = null;  // 用户手动选了文件，清掉 URL 上传模式
+    document.body.classList.remove('compact');  // 退出自动模式，恢复正常布局
     // 显示预览
     const reader = new FileReader();
     reader.onload = (e) => {

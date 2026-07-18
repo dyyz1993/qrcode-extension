@@ -18,6 +18,12 @@ body {
   padding: 16px;
 }
 
+/* compact 模式：popup 高度按内容自适应，确保二维码区始终可见 */
+body.compact {
+  max-height: 600px;  /* Chrome popup 默认最大高度 */
+  overflow: hidden;
+}
+
 /* Label */
 .label {
   font-size: 12px;
@@ -285,9 +291,61 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, min-height 0.2s;
   overflow: hidden;
   padding: 8px;
+}
+
+/* 紧凑模式：自动识别到图片 URL 时启用，预览缩小，二维码不滚动可见 */
+body.compact .preview-area {
+  min-height: 0;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  position: absolute;
+  top: 50px;
+  right: 16px;
+  border-radius: 6px;
+  border: 1px solid #eee;
+  cursor: default;
+}
+
+body.compact .preview-area:hover {
+  background: #fafafa;
+  border-color: #eee;
+}
+
+body.compact .preview-placeholder {
+  display: none !important;
+}
+
+body.compact .img-preview {
+  max-height: 56px;
+  max-width: 56px;
+  border-radius: 4px;
+}
+
+body.compact .url-section {
+  position: relative;
+  min-height: 56px;
+}
+
+body.compact #img-label {
+  display: none;  /* 自动模式不需要这个 label */
+}
+
+body.compact #img-generate-btn {
+  display: none;  /* 自动模式下不需要这个按钮 */
+}
+
+body.compact .qr-img {
+  width: 200px;
+  height: 200px;
+}
+
+body.compact .qr-placeholder {
+  width: 200px;
+  height: 200px;
 }
 
 .preview-area:hover {
