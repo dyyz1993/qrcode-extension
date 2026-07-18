@@ -93,6 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const shortLinkRow = document.getElementById('short-link-row');
   const shortUrlEl = document.getElementById('short-url');
   const copyLinkBtn = document.getElementById('copy-link-btn');
+  const generateBtn = document.getElementById('generate-btn');
 
   function setStatus(text, type) {
     textStatus.textContent = text;
@@ -109,6 +110,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // 请求期间禁用按钮
+    generateBtn.disabled = true;
+    generateBtn.textContent = '⏳ 生成中...';
     setStatus('正在生成短链...', 'loading');
     textQrLoading.style.display = 'flex';
     textQrImg.style.display = 'none';
@@ -145,8 +149,16 @@ document.addEventListener('DOMContentLoaded', () => {
       // 失败降级：服务端不通时，直接把原始文本编进二维码（虽长但能用）
       setStatus('⚠️ 服务端不可用，降级为本地编码：' + err.message, 'error');
       generateQR(text, textQrImg, textQrLoading);
+    } finally {
+      generateBtn.disabled = false;
+      generateBtn.textContent = '🔲 生成二维码';
     }
   }
+
+  // 按钮点击
+  generateBtn.addEventListener('click', () => {
+    shortenAndGenerate(textInput.value);
+  });
 
   // Ctrl/Cmd + Enter 触发
   textInput.addEventListener('keydown', (e) => {

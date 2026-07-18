@@ -121,6 +121,37 @@ body {
   display: block;
 }
 
+/* ===== 生成按钮 ===== */
+.generate-btn {
+  width: 100%;
+  padding: 11px;
+  background: #4a90d9;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  margin-bottom: 10px;
+  transition: background 0.15s, transform 0.1s;
+  box-shadow: 0 2px 6px rgba(74, 144, 217, 0.25);
+}
+
+.generate-btn:hover {
+  background: #3a7bc8;
+}
+
+.generate-btn:active {
+  transform: scale(0.98);
+}
+
+.generate-btn:disabled {
+  background: #bbb;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 /* ===== 文本输入框 ===== */
 #text-input {
   width: 100%;
