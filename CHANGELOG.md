@@ -3,6 +3,26 @@
 
 
 
+
+
+## [1.2.2] - 2026-07-19
+
+### 🐛 修复：无后缀图片 URL 无法识别（如 ChatGPT/飞书/SaaS）
+
+之前依赖 URL 后缀 + query 关键词识别，导致大量无后缀图片 URL（API、签名链接等）漏判。
+
+**新策略：**
+- 明显是图片后缀（.png/.jpg/.webp/.gif/...）→ 立即识别（不发请求）
+- 明显是网页（.html/.php / 末尾斜杠等）→ 跳过（不发请求）
+- **其他所有 URL**（无后缀的 API URL、签名链接等）→ 发 HEAD 请求验证 Content-Type
+
+这样 chatgpt.com/backend-api/estuary/content?id=... 这种 URL 也能正确识别为图片，
+因为服务端会返回 Content-Type: image/png。
+
+利用扩展 SW fetch 绕过 CORS，对各种 SaaS 图床都有效。
+
+---
+
 ## [1.2.1] - 2026-07-19
 
 ### ✨ 智能识别：地址栏是图片时自动切到图片 Tab

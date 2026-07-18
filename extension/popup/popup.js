@@ -92,15 +92,23 @@ document.addEventListener('DOMContentLoaded', () => {
   // ====== Tab 1: 链接（原逻辑） ======
   // 检测当前 tab URL 是不是图片 URL
   const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif'];
-  const IMAGE_HINT_RE = /(\b|[%?=&])(image|photo|pic|img|avatar|thumbnail|thumb|cover|preview)(\b|[%?=&_])/i;
+  const PAGE_EXTS = ['.html', '.htm', '.php', '.asp', '.aspx', '.jsp', '.jsx', '.tsx', '.vue', '.md', '.txt', '/'];
 
   // 通过 URL 后缀快速判断（不发请求）
   function isImageUrlByExt(url) {
     try {
       const u = new URL(url);
       const path = u.pathname.toLowerCase();
-      // 去掉 query/hash 后看后缀
       return IMAGE_EXTS.some(ext => path.endsWith(ext));
+    } catch { return false; }
+  }
+
+  // 明显是网页的 URL（无需 HEAD 验证，省请求）
+  function isObviousPageUrl(url) {
+    try {
+      const u = new URL(url);
+      const path = u.pathname.toLowerCase();
+      return PAGE_EXTS.some(ext => path.endsWith(ext));
     } catch { return false; }
   }
 
@@ -153,12 +161,13 @@ document.addEventListener('DOMContentLoaded', () => {
     generateQR(currentUrl, qrImg, qrLoading);
 
     // 检测是不是图片 URL
+    // 分级：明显图片后缀 → 立即识别；明显网页 → 跳过；其他 → HEAD 验证
     try {
       let detected = false;
       if (isImageUrlByExt(currentUrl)) {
-        detected = true;
-      } else if (IMAGE_HINT_RE.test(currentUrl)) {
-        // URL 看起来像图片但后缀不明，HEAD 验证（SW fetch 绕 CORS）
+        detected = true;  // 明显是图片，直接切
+      } else if (!isObviousPageUrl(currentUrl)) {
+        // 既不像图片也不像网页（API URL、无后缀等），HEAD 验证 Content-Type
         detected = await isImageUrlByHead(currentUrl);
       }
 
