@@ -7,10 +7,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let currentUrl = '';
 
-  // ====== 配置 ======
-  const CONFIG = window.QR_CONFIG || {};
-  const BASE_URL = (CONFIG.BASE_URL || '').replace(/\/+$/, '');
-  const AUTH_TOKEN = CONFIG.AUTH_TOKEN || '';
+  // ====== 配置（storage 优先，fallback 到 config.js 默认值）======
+  const DEFAULTS = window.QR_CONFIG || { BASE_URL: '', AUTH_TOKEN: '' };
+  let BASE_URL = '';
+  let AUTH_TOKEN = '';
+
+  // 异步加载配置后再初始化文本 Tab 的异步逻辑
+  function loadConfig() {
+    return new Promise((resolve) => {
+      chrome.storage.sync.get(['baseUrl', 'authToken'], (result) => {
+        BASE_URL = (result.baseUrl !== undefined ? result.baseUrl : DEFAULTS.BASE_URL).replace(/\/+$/, '');
+        AUTH_TOKEN = result.authToken !== undefined ? result.authToken : DEFAULTS.AUTH_TOKEN;
+        resolve();
+      });
+    });
+  }
+
+  // 齿轮按钮打开设置页
+  document.getElementById('settings-btn').addEventListener('click', () => {
+    chrome.runtime.openOptionsPage();
+  });
 
   // ====== 生成二维码（复用，输出到指定 img/loading 元素）======
   function generateQR(content, imgEl, loadingEl) {
@@ -95,6 +111,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const copyLinkBtn = document.getElementById('copy-link-btn');
   const generateBtn = document.getElementById('generate-btn');
 
+  // 加载配置（启动时异步读一次；用户在设置页改完后下次打开 popup 会读到新值）
+  loadConfig();
+
   function setStatus(text, type) {
     textStatus.textContent = text;
     textStatus.className = 'status-row' + (type ? ' ' + type : '');
@@ -106,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     if (!BASE_URL) {
-      setStatus('配置缺失：config.js 里 BASE_URL 未设置', 'error');
+      setStatus('⚠️ 请点右上角 ⚙️ 配置服务器地址', 'error');
       return;
     }
 

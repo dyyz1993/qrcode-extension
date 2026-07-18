@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>QR Code Tool 设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <h1>⚙️ 设置</h1>
+    <p class="subtitle">配置远程短链服务（用于「📝 文本」Tab）</p>
+
+    <div class="form-group">
+      <label for="base-url">服务器地址</label>
+      <input type="text" id="base-url"
+             placeholder="https://your-server.com"
+             autocomplete="off" spellcheck="false" />
+      <div class="hint">短链服务的根地址，不要带末尾斜杠。例：<code>https://qrcode.shanbox.19930810.xyz:8443</code></div>
+    </div>
+
+    <div class="form-group">
+      <label for="auth-token">访问令牌 (Token)</label>
+      <input type="text" id="auth-token"
+             placeholder="与服务端配置的 AUTH_TOKEN 一致"
+             autocomplete="off" spellcheck="false" />
+      <div class="hint">用于鉴权，必须与服务端一致。留空表示服务端未启用鉴权。</div>
+    </div>
+
+    <div class="actions">
+      <button id="save-btn" class="btn-primary">💾 保存</button>
+      <button id="reset-btn" class="btn-secondary">↩️ 恢复默认</button>
+      <button id="test-btn" class="btn-secondary">🧪 测试连接</button>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="footer">
+      <p>💡 不配置也能用：会使用内置默认服务器。</p>
+      <p>配置后通过 Chrome 账号自动跨设备同步。</p>
+    </div>
+  </div>
+
+  <script src="../config.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
