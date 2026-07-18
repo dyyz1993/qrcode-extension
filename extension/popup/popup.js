@@ -5,7 +5,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const qrImg = document.getElementById('qr-img');
   const qrLoading = document.getElementById('qr-loading');
 
+  // 图片 Tab 的 DOM 引用（提前声明，便于在多处使用）
+  const imgFileInput = document.getElementById('img-file-input');
+  const imgPreviewArea = document.getElementById('img-preview-area');
+  const imgPreviewPlaceholder = document.getElementById('img-preview-placeholder');
+  const imgPreview = document.getElementById('img-preview');
+  const imgGenerateBtn = document.getElementById('img-generate-btn');
+  const imgStatus = document.getElementById('img-status');
+  const imgQrImg = document.getElementById('img-qr-img');
+  const imgQrLoading = document.getElementById('img-qr-loading');
+  const imgShortLinkRow = document.getElementById('img-short-link-row');
+  const imgShortUrlEl = document.getElementById('img-short-url');
+  const imgCopyLinkBtn = document.getElementById('img-copy-link-btn');
+
   let currentUrl = '';
+  let pendingImageUrl = null;  // 检测到地址栏是图片时存 URL，等用户点上传
 
   // ====== 配置（storage 优先，fallback 到 config.js 默认值）======
   const DEFAULTS = window.QR_CONFIG || { BASE_URL: '', AUTH_TOKEN: '' };
@@ -76,19 +90,84 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ====== Tab 1: 链接（原逻辑） ======
+  // 检测当前 tab URL 是不是图片 URL
+  const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif'];
+  const IMAGE_HINT_RE = /(\b|[%?=&])(image|photo|pic|img|avatar|thumbnail|thumb|cover|preview)(\b|[%?=&_])/i;
+
+  // 通过 URL 后缀快速判断（不发请求）
+  function isImageUrlByExt(url) {
+    try {
+      const u = new URL(url);
+      const path = u.pathname.toLowerCase();
+      // 去掉 query/hash 后看后缀
+      return IMAGE_EXTS.some(ext => path.endsWith(ext));
+    } catch { return false; }
+  }
+
+  // 通过 HEAD 请求确认 Content-Type 是否为图片
+  async function isImageUrlByHead(url) {
+    try {
+      const resp = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+      if (!resp.ok) return false;
+      const ct = resp.headers.get('Content-Type') || '';
+      return ct.toLowerCase().startsWith('image/');
+    } catch { return false; }
+  }
+
+  // 把检测到的图片 URL 塞进图片 Tab，等用户点按钮上传
+  function offerImageFromUrl(url) {
+    document.querySelector('.tab[data-tab="image"]').click();
+    // 显示提示，但不自动上传（让用户主动确认）
+    setImgStatus('🔎 检测到当前页是图片，点下方按钮上传', 'loading');
+    imgGenerateBtn.disabled = false;
+
+    // 构造一个"待上传"状态：用一个标志变量告诉 generateBtn，下次点击时 fetch 这个 URL
+    pendingImageUrl = url;
+
+    // 预览：直接用 URL 当 img src 显示（可能因为防盗链失败，给 onerror 兜底）
+    imgPreview.onerror = () => {
+      imgPreview.style.display = 'none';
+      imgPreviewPlaceholder.style.display = 'block';
+      imgPreviewPlaceholder.innerHTML = '📁 图片预览不可用<br><span style="font-size:11px;color:#bbb;">（可能被防盗链拦截，但 SW 仍可尝试上传）</span>';
+    };
+    imgPreview.src = url;
+    imgPreview.style.display = 'block';
+    imgPreviewPlaceholder.style.display = 'none';
+  }
+
   // 获取当前标签页 URL 并生成二维码
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs && tabs.length > 0) {
-      currentUrl = tabs[0].url || '';
-      urlInput.value = currentUrl;
-      if (currentUrl) {
-        generateQR(currentUrl, qrImg, qrLoading);
-      } else {
-        qrLoading.textContent = '无法获取当前页面 URL';
-      }
-    } else {
+  chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+    if (!tabs || !tabs.length) {
       urlInput.placeholder = '无法获取标签页信息';
       qrLoading.textContent = '无法获取标签页信息';
+      return;
+    }
+    currentUrl = tabs[0].url || '';
+    urlInput.value = currentUrl;
+    if (!currentUrl) {
+      qrLoading.textContent = '无法获取当前页面 URL';
+      return;
+    }
+
+    // 默认先在链接 Tab 生成 URL 二维码（保持原行为）
+    generateQR(currentUrl, qrImg, qrLoading);
+
+    // 检测是不是图片 URL
+    try {
+      let detected = false;
+      if (isImageUrlByExt(currentUrl)) {
+        detected = true;
+      } else if (IMAGE_HINT_RE.test(currentUrl)) {
+        // URL 看起来像图片但后缀不明，HEAD 验证（SW fetch 绕 CORS）
+        detected = await isImageUrlByHead(currentUrl);
+      }
+
+      if (detected) {
+        offerImageFromUrl(currentUrl);
+      }
+    } catch (e) {
+      // 检测失败不影响默认行为
+      console.log('image URL detection failed:', e);
     }
   });
 
@@ -222,17 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ====== Tab 3: 图片上传 ======
-  const imgFileInput = document.getElementById('img-file-input');
-  const imgPreviewArea = document.getElementById('img-preview-area');
-  const imgPreviewPlaceholder = document.getElementById('img-preview-placeholder');
-  const imgPreview = document.getElementById('img-preview');
-  const imgGenerateBtn = document.getElementById('img-generate-btn');
-  const imgStatus = document.getElementById('img-status');
-  const imgQrImg = document.getElementById('img-qr-img');
-  const imgQrLoading = document.getElementById('img-qr-loading');
-  const imgShortLinkRow = document.getElementById('img-short-link-row');
-  const imgShortUrlEl = document.getElementById('img-short-url');
-  const imgCopyLinkBtn = document.getElementById('img-copy-link-btn');
+  // （DOM 引用已提前到文件顶部，因为 detect 逻辑也要用）
 
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
   let currentImageFile = null;
@@ -259,6 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     currentImageFile = file;
+    pendingImageUrl = null;  // 用户手动选了文件，清掉 URL 上传模式
     // 显示预览
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -267,6 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
       imgPreviewPlaceholder.style.display = 'none';
     };
     reader.readAsDataURL(file);
+    imgPreview.onerror = null;  // 清掉 URL 模式的错误处理
     imgGenerateBtn.disabled = false;
     const sizeStr = file.size > 1024 * 1024
       ? (file.size / 1024 / 1024).toFixed(1) + 'MB'
@@ -312,7 +383,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   async function uploadImageAndGenerate() {
-    if (!currentImageFile) {
+    // 三种来源优先级：pendingImageUrl（地址栏识别）> currentImageFile（手动选/粘贴）
+    if (!currentImageFile && !pendingImageUrl) {
       setImgStatus('请先选择图片', 'error');
       return;
     }
@@ -325,14 +397,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     imgGenerateBtn.disabled = true;
     imgGenerateBtn.textContent = '⏳ 上传中...';
-    setImgStatus('正在上传图片...', 'loading');
+    setImgStatus(pendingImageUrl ? '正在抓取并上传图片...' : '正在上传图片...', 'loading');
     imgQrLoading.style.display = 'flex';
     imgQrImg.style.display = 'none';
     imgShortLinkRow.style.display = 'none';
 
     try {
+      // 拿到待上传的 blob（从 URL fetch 或直接用 file）
+      let blob;
+      let filename = 'image';
+      if (pendingImageUrl) {
+        setImgStatus('正在抓取图片（绕过防盗链）...', 'loading');
+        const imgResp = await fetch(pendingImageUrl);
+        if (!imgResp.ok) throw new Error('图片获取失败 HTTP ' + imgResp.status);
+        blob = await imgResp.blob();
+        if (blob.size > MAX_IMAGE_SIZE) {
+          throw new Error('图片过大 ' + (blob.size/1024/1024).toFixed(1) + 'MB（上限 5MB）');
+        }
+        // 从 URL 推文件名
+        try {
+          const u = new URL(pendingImageUrl);
+          filename = u.pathname.split('/').pop() || 'image';
+        } catch {}
+      } else {
+        blob = currentImageFile;
+        filename = currentImageFile.name || 'image';
+      }
+
       const fd = new FormData();
-      fd.append('image', currentImageFile);
+      fd.append('image', blob, filename);
       const resp = await fetch(BASE_URL + '/api/upload', {
         method: 'POST',
         headers: { 'X-Auth-Token': AUTH_TOKEN },
@@ -350,6 +443,9 @@ document.addEventListener('DOMContentLoaded', () => {
       setImgStatus('✅ 已生成，扫码可看图（手机长按可保存）', 'success');
       imgQrLoading.style.display = 'none';
       generateQR(shortURL, imgQrImg, imgQrLoading);
+
+      // 上传成功后清空 pendingImageUrl（下次打开重新检测）
+      pendingImageUrl = null;
 
       imgShortUrlEl.textContent = shortURL;
       imgShortUrlEl.href = shortURL;
