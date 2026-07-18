@@ -5,6 +5,10 @@ Thumbs.db
 *.swo
 *~
 
+# AI Agent 指南（本地私有，含敏感信息：真实 token / 服务器路径 / 运维细节）
+# 如需共享给协作者，请单独私下传文件，不要提交
+AGENTS.md
+
 # IDE
 .vscode/
 .idea/
