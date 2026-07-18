@@ -381,13 +381,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .wrap{max-width:600px;margin:0 auto}
 .head{text-align:center;padding:16px 0 20px}
 .head .ic{font-size:40px;margin-bottom:8px}
-.head h1{font-size:17px;font-weight:600;color:#333}
+.head h1{font-size:17px;font-weight:600;color:#333;padding:0 90px}
 .content-box{background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:20px}
 pre{white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:14px;line-height:1.65;color:#222;max-height:50vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.actions{position:sticky;bottom:0;padding:12px 0}
-.btn{display:block;width:100%;padding:16px;background:#4a90d9;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px rgba(74,144,217,0.3);transition:transform .1s,background .15s}
-.btn:active{transform:scale(0.98)}
-.btn.done{background:#34a853;box-shadow:0 4px 12px rgba(52,168,83,0.3)}
+.btn{position:fixed;top:16px;left:16px;z-index:100;padding:10px 16px;background:#4a90d9;color:#fff;border:none;border-radius:999px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px rgba(74,144,217,0.35);transition:transform .1s,background .15s;-webkit-tap-highlight-color:transparent;user-select:none}
+.btn:active{transform:scale(0.95)}
+.btn.done{background:#34a853;box-shadow:0 4px 12px rgba(52,168,83,0.35)}
 .foot{text-align:center;color:#bbb;font-size:11px;margin-top:16px}
 </style>
 </head>
@@ -397,11 +396,9 @@ pre{white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,'SF Mono'
     <div class="ic">📋</div>
     <h1>扫码获得以下内容</h1>
   </div>
+  <button class="btn" id="copyBtn" onclick="doCopy()">📋 复制</button>
   <div class="content-box">
     <pre id="content"></pre>
-  </div>
-  <div class="actions">
-    <button class="btn" id="copyBtn" onclick="doCopy()">📋 一键复制</button>
   </div>
   <div class="foot">生成于 ` + createdStr + ` · 7 天后过期</div>
 </div>
