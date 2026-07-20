@@ -371,3 +371,35 @@ body.compact .qr-placeholder {
   border-radius: 4px;
   display: block;
 }
+
+/* ===== 文件 Tab ===== */
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 4px;
+}
+
+.file-icon {
+  font-size: 38px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.file-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #222;
+  word-break: break-all;
+  margin-bottom: 2px;
+}
+
+.file-size {
+  font-size: 11px;
+  color: #999;
+}

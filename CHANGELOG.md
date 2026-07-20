@@ -1,13 +1,47 @@
 # Changelog
 
 
+## [1.3.0] - 2026-07-20
 
+### 新增：通用文件上传（APK/zip/pdf/exe 等任意文件）
 
+popup 新增第四个 Tab「📎 文件」，支持任意文件类型上传，生成扫码下载二维码。
 
+- **popup 新增「📎 文件」Tab**：
+  - 选择本地文件 / 拖拽上传
+  - 文件信息卡：图标（按扩展名 emoji）+ 文件名 + 大小
+  - 单文件上限 200MB
+- **手机扫码打开文件展示页**：
+  - 显示文件名、大小、MIME 类型
+  - 大「下载文件」按钮（强制 attachment 下载）
+  - 安全提示：「仅下载来自可信来源的文件」
 
+### 服务端改造
 
+- **POST /api/upload** 新增 `kind=file` 参数：
+  - 图片模式（默认）：5MB 上限，必须 image/*
+  - 文件模式（`?kind=file`）：200MB 上限，接受任意 MIME
+- **新增 GET /f/:code**：返回文件二进制
+  - Content-Disposition: attachment（强制下载，浏览器不会尝试打开 APK/EXE）
+  - 文件名按 RFC 5987 编码（支持中文）
+  - 流式输出（io.Copy），大文件不爆内存
+- **新增 viewFilePage**：文件信息 + 下载按钮的展示页
+- **文件名清理 sanitizeFilename**：防路径穿越 + 控制字符
+- 存储分层：元数据在 links.json；文件二进制在 data/files/<code>.<ext>
+- 文件上传独立频率限制：每 IP 每分钟 3 次
+- pruneExpired 和惰性删除统一调 removeLinkFile（按 Kind 删对应目录）
 
+### 文件类型图标（emoji）
 
+APK / 压缩包 / PDF / Word / Excel / PPT / 音频 / 视频 / Windows 可执行 / macOS / 文本 / 配置 / 其他
+
+### 设计原则
+
+- **扩展只做"上传入口 + 生成二维码"**，不参与下载（手机扫码后直接跟服务端通信）
+- **不拦截浏览器下载**：用户下载行为不应被扩展接管
+- **强制下载**：Content-Disposition: attachment，避免浏览器尝试打开可执行文件
+
+---
 
 ## [1.2.4] - 2026-07-19
 

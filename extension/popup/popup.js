@@ -495,4 +495,163 @@ document.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => { imgCopyLinkBtn.textContent = '📋'; }, 1500);
     }
   });
+
+  // ====== Tab 4: 文件上传 ======
+  const fileFileInput = document.getElementById('file-file-input');
+  const filePreviewArea = document.getElementById('file-preview-area');
+  const filePreviewPlaceholder = document.getElementById('file-preview-placeholder');
+  const fileInfo = document.getElementById('file-info');
+  const fileIconEl = document.getElementById('file-icon');
+  const fileNameEl = document.getElementById('file-name');
+  const fileSizeEl = document.getElementById('file-size-text');
+  const fileGenerateBtn = document.getElementById('file-generate-btn');
+  const fileStatus = document.getElementById('file-status');
+  const fileQrImg = document.getElementById('file-qr-img');
+  const fileQrLoading = document.getElementById('file-qr-loading');
+  const fileShortLinkRow = document.getElementById('file-short-link-row');
+  const fileShortUrlEl = document.getElementById('file-short-url');
+  const fileCopyLinkBtn = document.getElementById('file-copy-link-btn');
+
+  const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
+  let currentUploadFile = null;
+
+  function setFileStatus(text, type) {
+    fileStatus.textContent = text;
+    fileStatus.className = 'status-row' + (type ? ' ' + type : '');
+  }
+
+  // 根据扩展名返回 emoji 图标（与服务端 fileIconFor 对齐）
+  function fileIconFor(name) {
+    const ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+    const map = {
+      '.apk': '📦', '.zip': '🗜️', '.rar': '🗜️', '.7z': '🗜️', '.tar': '🗜️', '.gz': '🗜️',
+      '.pdf': '📄', '.doc': '📝', '.docx': '📝', '.xls': '📊', '.xlsx': '📊', '.csv': '📊',
+      '.ppt': '📑', '.pptx': '📑',
+      '.mp3': '🎵', '.wav': '🎵', '.flac': '🎵', '.m4a': '🎵',
+      '.mp4': '🎬', '.mov': '🎬', '.avi': '🎬', '.mkv': '🎬',
+      '.exe': '⚙️', '.msi': '⚙️', '.dmg': '🍎', '.pkg': '🍎',
+      '.txt': '📃', '.md': '📃', '.json': '🔧', '.xml': '🔧', '.yaml': '🔧', '.yml': '🔧'
+    };
+    return map[ext] || '📎';
+  }
+
+  function humanSize(b) {
+    if (b >= 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
+    if (b >= 1024) return Math.round(b / 1024) + ' KB';
+    return b + ' B';
+  }
+
+  function setUploadFile(file) {
+    if (file.size > MAX_FILE_SIZE) {
+      setFileStatus('⚠️ 文件过大 ' + humanSize(file.size) + '（上限 200MB）', 'error');
+      return;
+    }
+    currentUploadFile = file;
+    // 显示文件信息卡
+    fileIconEl.textContent = fileIconFor(file.name);
+    fileNameEl.textContent = file.name || '未命名文件';
+    fileSizeEl.textContent = humanSize(file.size);
+    fileInfo.style.display = 'flex';
+    filePreviewPlaceholder.style.display = 'none';
+    fileGenerateBtn.disabled = false;
+    setFileStatus(`✅ 已选择：${file.name} (${humanSize(file.size)})`, 'success');
+    // 清之前的结果
+    fileQrImg.style.display = 'none';
+    fileShortLinkRow.style.display = 'none';
+  }
+
+  filePreviewArea.addEventListener('click', () => fileFileInput.click());
+  fileFileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setUploadFile(e.target.files[0]);
+    }
+  });
+
+  // 拖拽支持
+  filePreviewArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    filePreviewArea.classList.add('dragover');
+  });
+  filePreviewArea.addEventListener('dragleave', () => {
+    filePreviewArea.classList.remove('dragover');
+  });
+  filePreviewArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    filePreviewArea.classList.remove('dragover');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      setUploadFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  async function uploadFileAndGenerate() {
+    if (!currentUploadFile) {
+      setFileStatus('请先选择文件', 'error');
+      return;
+    }
+    await loadConfig();
+    if (!BASE_URL) {
+      setFileStatus('⚠️ 请点右上角 ⚙️ 配置服务器地址', 'error');
+      return;
+    }
+
+    fileGenerateBtn.disabled = true;
+    fileGenerateBtn.textContent = '⏳ 上传中...';
+    setFileStatus(`正在上传 ${humanSize(currentUploadFile.size)}...`, 'loading');
+    fileQrLoading.style.display = 'flex';
+    fileQrImg.style.display = 'none';
+    fileShortLinkRow.style.display = 'none';
+
+    try {
+      const fd = new FormData();
+      fd.append('file', currentUploadFile);
+      const resp = await fetch(BASE_URL + '/api/upload?kind=file', {
+        method: 'POST',
+        headers: { 'X-Auth-Token': AUTH_TOKEN },
+        body: fd
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.message || 'HTTP ' + resp.status);
+      }
+
+      const data = await resp.json();
+      const shortURL = data.url || (BASE_URL + '/s/' + data.code);
+
+      setFileStatus('✅ 已生成，扫码可下载文件', 'success');
+      fileQrLoading.style.display = 'none';
+      generateQR(shortURL, fileQrImg, fileQrLoading);
+
+      fileShortUrlEl.textContent = shortURL;
+      fileShortUrlEl.href = shortURL;
+      fileShortLinkRow.style.display = 'flex';
+    } catch (err) {
+      fileQrLoading.style.display = 'none';
+      setFileStatus('❌ 上传失败：' + err.message, 'error');
+    } finally {
+      fileGenerateBtn.disabled = false;
+      fileGenerateBtn.textContent = '🔲 生成二维码';
+    }
+  }
+
+  fileGenerateBtn.addEventListener('click', uploadFileAndGenerate);
+
+  fileCopyLinkBtn.addEventListener('click', async () => {
+    const url = fileShortUrlEl.textContent;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      fileCopyLinkBtn.textContent = '✅';
+      setTimeout(() => { fileCopyLinkBtn.textContent = '📋'; }, 1500);
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      fileCopyLinkBtn.textContent = '✅';
+      setTimeout(() => { fileCopyLinkBtn.textContent = '📋'; }, 1500);
+    }
+  });
 });

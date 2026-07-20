@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,12 +38,13 @@ func envOrDefault(key, def string) string {
 // ===== 数据模型 =====
 
 type Link struct {
-	Content string    `json:"content"`           // 文本内容（kind=text）
-	Kind    string    `json:"kind,omitempty"`    // "text" | "image"（空 = text，向后兼容）
-	MIME    string    `json:"mime,omitempty"`    // 图片 MIME (image/png 等)
-	Size    int64     `json:"size,omitempty"`    // 图片字节数
-	Created time.Time `json:"created"`
-	Expires time.Time `json:"expires"`
+	Content  string    `json:"content"`            // 文本内容（kind=text）
+	Kind     string    `json:"kind,omitempty"`     // "text" | "image" | "file"（空 = text）
+	MIME     string    `json:"mime,omitempty"`     // 图片/文件 MIME
+	Size     int64     `json:"size,omitempty"`     // 图片/文件字节数
+	Filename string    `json:"filename,omitempty"` // 原始文件名（kind=file）
+	Created  time.Time `json:"created"`
+	Expires  time.Time `json:"expires"`
 }
 
 type Store struct {
@@ -101,26 +103,29 @@ func save() error {
 
 func pruneExpired() int {
 	store.mu.Lock()
-	// 先在锁内收集要删的图片文件清单，文件 IO 放到锁外做
-	type toRemove struct{ code, mime string }
-	var imgs []toRemove
+	// 先在锁内收集要删的文件清单，文件 IO 放到锁外做
+	type toRemove struct {
+		code string
+		link Link
+	}
+	var files []toRemove
 	now := time.Now()
 	removed := 0
 	for code, link := range store.data {
 		if now.After(link.Expires) {
-			if link.Kind == "image" {
-				imgs = append(imgs, toRemove{code, link.MIME})
+			if link.Kind == "image" || link.Kind == "file" {
+				files = append(files, toRemove{code, link})
 			}
 			delete(store.data, code)
 			removed++
 		}
 	}
 	store.mu.Unlock()
-	for _, im := range imgs {
-		removeImageFile(im.code, im.mime)
+	for _, f := range files {
+		removeLinkFile(f.link, f.code)
 	}
 	if removed > 0 {
-		log.Printf("[INFO] 清理了 %d 条过期记录（其中图片 %d）", removed, len(imgs))
+		log.Printf("[INFO] 清理了 %d 条过期记录（其中文件 %d）", removed, len(files))
 	}
 	return removed
 }
@@ -221,6 +226,8 @@ func clientIP(r *http.Request) string {
 const maxContentLen = 64 * 1024    // 文本上限 64KB
 const maxImageSize = 5 * 1024 * 1024 // 图片上限 5MB
 const imageRateLimit = 5            // 图片上传每 IP 每分钟 5 次（省磁盘）
+const maxFileSize = 200 * 1024 * 1024 // 通用文件上限 200MB
+const fileRateLimit = 3              // 文件上传每 IP 每分钟 3 次（更省磁盘）
 
 // mimeToExt 把 MIME 类型映射成文件扩展名
 func mimeToExt(mime string) string {
@@ -293,6 +300,101 @@ func imageRateAllow(ip string) bool {
 	pruned = append(pruned, now)
 	imageRateMap[ip] = pruned
 	return true
+}
+
+// ===== 通用文件（kind=file）相关 =====
+
+// extFromFilename 从文件名取扩展名，兜底用 MIME 推导
+func extFromFilename(filename, mime string) string {
+	filename = filepath.Base(filename)
+	if idx := strings.LastIndex(filename, "."); idx >= 0 {
+		ext := filename[idx:]
+		// 避免拿到 ".." 或只有 "."
+		if len(ext) > 1 && len(ext) <= 16 {
+			return strings.ToLower(ext)
+		}
+	}
+	return mimeToExt(mime)
+}
+
+// filePath 返回通用文件在磁盘上的绝对路径（独立目录 data/files/）
+func filePath(code, filename, mime string) string {
+	return filepath.Join(dataDir, "files", code+extFromFilename(filename, mime))
+}
+
+// removeFileByExt 删除指定 code + ext 的文件（忽略错误）
+func removeFileByExt(code, ext string) {
+	p := filepath.Join(dataDir, "files", code+ext)
+	if _, err := os.Stat(p); err == nil {
+		os.Remove(p)
+	}
+}
+
+// removeLinkFile 按 Kind 删除对应的二进制文件（统一入口，给 pruneExpired 用）
+func removeLinkFile(link Link, code string) {
+	switch link.Kind {
+	case "image":
+		removeImageFile(code, link.MIME)
+	case "file":
+		// 兜底：尝试文件名扩展名 + 常见扩展名
+		removeFileByExt(code, extFromFilename(link.Filename, link.MIME))
+		for _, ext := range []string{".apk", ".zip", ".pdf", ".exe", ".dmg", ".bin"} {
+			removeFileByExt(code, ext)
+		}
+	}
+}
+
+// fileRateAllow 文件上传频率限制（独立计数）
+var (
+	fileRateMu  sync.Mutex
+	fileRateMap = make(map[string][]time.Time)
+)
+
+func fileRateAllow(ip string) bool {
+	fileRateMu.Lock()
+	defer fileRateMu.Unlock()
+	now := time.Now()
+	cutoff := now.Add(-time.Minute)
+	hits := fileRateMap[ip]
+	pruned := hits[:0]
+	for _, t := range hits {
+		if t.After(cutoff) {
+			pruned = append(pruned, t)
+		}
+	}
+	if len(pruned) >= fileRateLimit {
+		fileRateMap[ip] = pruned
+		return false
+	}
+	pruned = append(pruned, now)
+	fileRateMap[ip] = pruned
+	return true
+}
+
+// sanitizeFilename 清理文件名里的危险字符（防路径穿越 + 防头部注入）
+func sanitizeFilename(name string) string {
+	name = filepath.Base(name) // 去掉任何路径
+	name = strings.ReplaceAll(name, "\x00", "")
+	if name == "" || name == "." || name == "/" {
+		name = "file"
+	}
+	return name
+}
+
+// contentDisposition 生成符合 RFC 5987 的 Content-Disposition 头（支持中文）
+func contentDisposition(filename string) string {
+	filename = sanitizeFilename(filename)
+	// ASCII fallback：转义双引号 + 去掉控制字符
+	ascii := strings.Map(func(r rune) rune {
+		if r < 32 || r > 126 {
+			return '_'
+		}
+		return r
+	}, filename)
+	ascii = strings.ReplaceAll(ascii, `"`, `\"`)
+	// RFC 5987 encoded version（支持 UTF-8）
+	encoded := url.PathEscape(filename)
+	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, ascii, encoded)
 }
 
 // POST /api/shorten
@@ -394,60 +496,92 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 图片上传独立频率限制
-	if !imageRateAllow(ip) {
-		writeJSON(w, 429, map[string]any{"error": "rate_limited", "message": "上传太频繁，请稍后再试"})
-		return
-	}
-
 	if r.Method != http.MethodPost {
 		writeJSON(w, 405, map[string]any{"error": "method_not_allowed"})
 		return
 	}
 
+	// 先解析小部分（拿 kind 字段），再决定 MaxBytesReader 上限
+	// 注意：multipart 的字段顺序不保证，所以这里先限制 1MB 读 kind，后面再放宽
+	// 简化做法：直接按 query 参数判 kind，避免双阶段解析
+	isFile := r.URL.Query().Get("kind") == "file"
+
+	var maxSize int64
+	var rateName string
+	if isFile {
+		maxSize = maxFileSize
+		rateName = "文件"
+		if !fileRateAllow(ip) {
+			writeJSON(w, 429, map[string]any{"error": "rate_limited", "message": "上传太频繁，请稍后再试"})
+			return
+		}
+	} else {
+		maxSize = maxImageSize
+		rateName = "图片"
+		if !imageRateAllow(ip) {
+			writeJSON(w, 429, map[string]any{"error": "rate_limited", "message": "上传太频繁，请稍后再试"})
+			return
+		}
+	}
+
 	// 限制整体请求体大小
-	r.Body = http.MaxBytesReader(w, r.Body, maxImageSize+1024)
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		writeJSON(w, 400, map[string]any{"error": "parse_failed", "message": "图片解析失败或过大（上限 5MB）：" + err.Error()})
+	r.Body = http.MaxBytesReader(w, r.Body, maxSize+1024)
+	// ParseMultipartForm 的 maxMemory 是内存缓冲上限，超过部分会写临时文件
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeJSON(w, 400, map[string]any{"error": "parse_failed", "message": rateName + "解析失败或过大（上限 " + humanSize(maxSize) + "）：" + err.Error()})
 		return
 	}
 
+	// 接受字段名 "image" 或 "file"
 	file, header, err := r.FormFile("image")
 	if err != nil {
-		writeJSON(w, 400, map[string]any{"error": "no_file", "message": "未找到 image 字段：" + err.Error()})
+		file, header, err = r.FormFile("file")
+	}
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"error": "no_file", "message": "未找到 image/file 字段：" + err.Error()})
 		return
 	}
 	defer file.Close()
 
-	if header.Size > maxImageSize {
-		writeJSON(w, 400, map[string]any{"error": "image_too_large", "message": "图片过大（上限 5MB）"})
+	if header.Size > maxSize {
+		writeJSON(w, 400, map[string]any{"error": "too_large", "message": rateName + "过大（上限 " + humanSize(maxSize) + "）"})
 		return
 	}
 
-	// 嗅探真实 MIME（防伪造扩展名）：读前 512 字节
+	// 嗅探真实 MIME：读前 512 字节
 	head := make([]byte, 512)
 	n, _ := file.Read(head)
 	head = head[:n]
 	mime := http.DetectContentType(head)
-	if !isImageMIME(mime) {
-		writeJSON(w, 400, map[string]any{"error": "not_image", "message": "不支持的图片类型：" + mime})
-		return
-	}
-	// 把读指针拨回开头
+	// 拨回开头
 	if seeker, ok := file.(io.Seeker); ok {
 		seeker.Seek(0, io.SeekStart)
 	}
 
-	// 生成短码
+	if !isFile {
+		// 图片模式：必须是支持的图片类型
+		if !isImageMIME(mime) {
+			writeJSON(w, 400, map[string]any{"error": "not_image", "message": "不支持的图片类型：" + mime})
+			return
+		}
+	}
+
+	// 生成短码 + 决定存储目录和路径
 	code := genCode()
-	imgDir := filepath.Join(dataDir, "images")
-	if err := os.MkdirAll(imgDir, 0755); err != nil {
+	var dir, finalPath string
+	if isFile {
+		dir = filepath.Join(dataDir, "files")
+		finalPath = filePath(code, header.Filename, mime)
+	} else {
+		dir = filepath.Join(dataDir, "images")
+		finalPath = imagePath(code, mime)
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		writeJSON(w, 500, map[string]any{"error": "mkdir_failed"})
 		return
 	}
 
-	// 原子写入图片文件
-	finalPath := imagePath(code, mime)
+	// 原子写入
 	tmpPath := finalPath + ".tmp"
 	out, err := os.Create(tmpPath)
 	if err != nil {
@@ -469,32 +603,54 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	// 存元数据
 	now := time.Now()
+	kind := "image"
+	if isFile {
+		kind = "file"
+	}
 	link := Link{
-		Kind:    "image",
-		MIME:    mime,
-		Size:    written,
-		Created: now,
-		Expires: now.Add(7 * 24 * time.Hour),
+		Kind:     kind,
+		MIME:     mime,
+		Size:     written,
+		Filename: sanitizeFilename(header.Filename),
+		Created:  now,
+		Expires:  now.Add(7 * 24 * time.Hour),
 	}
 	store.mu.Lock()
 	store.data[code] = link
 	store.mu.Unlock()
 
 	if err := save(); err != nil {
-		removeImageFile(code, mime)
+		removeLinkFile(link, code)
 		log.Printf("[ERROR] 保存元数据失败: %v", err)
 		writeJSON(w, 500, map[string]any{"error": "persist_failed"})
 		return
 	}
 
 	shortURL := buildShortURL(code)
-	log.Printf("[INFO] 上传图片 code=%s ip=%s mime=%s size=%d", code, ip, mime, written)
-	writeJSON(w, 200, map[string]any{
+	resp := map[string]any{
 		"code": code,
 		"url":  shortURL,
 		"size": written,
 		"mime": mime,
-	})
+	}
+	if isFile {
+		resp["filename"] = link.Filename
+		log.Printf("[INFO] 上传文件 code=%s ip=%s name=%s mime=%s size=%d", code, ip, link.Filename, mime, written)
+	} else {
+		log.Printf("[INFO] 上传图片 code=%s ip=%s mime=%s size=%d", code, ip, mime, written)
+	}
+	writeJSON(w, 200, resp)
+}
+
+// humanSize 把字节数格式化成人类可读（用于错误消息）
+func humanSize(b int64) string {
+	if b >= 1024*1024 {
+		return fmt.Sprintf("%dMB", b/1024/1024)
+	}
+	if b >= 1024 {
+		return fmt.Sprintf("%dKB", b/1024)
+	}
+	return fmt.Sprintf("%dB", b)
 }
 
 // GET /img/:code -> 返回原始图片二进制
@@ -519,7 +675,7 @@ func handleImg(w http.ResponseWriter, r *http.Request) {
 		store.mu.Lock()
 		delete(store.data, code)
 		store.mu.Unlock()
-		removeImageFile(code, link.MIME)
+		removeLinkFile(link, code)
 		_ = save()
 		http.NotFound(w, r)
 		return
@@ -536,6 +692,49 @@ func handleImg(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", link.MIME)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", link.Size))
+	io.Copy(w, f)
+}
+
+// GET /f/:code -> 返回通用文件二进制（强制下载，流式输出）
+func handleFile(w http.ResponseWriter, r *http.Request) {
+	code := strings.TrimPrefix(r.URL.Path, "/f/")
+	if code == "" || len(code) > 16 || !isValidCode(code) {
+		http.NotFound(w, r)
+		return
+	}
+
+	store.mu.RLock()
+	link, ok := store.data[code]
+	store.mu.RUnlock()
+
+	if !ok || link.Kind != "file" {
+		http.NotFound(w, r)
+		return
+	}
+
+	if time.Now().After(link.Expires) {
+		store.mu.Lock()
+		delete(store.data, code)
+		store.mu.Unlock()
+		removeLinkFile(link, code)
+		_ = save()
+		http.NotFound(w, r)
+		return
+	}
+
+	p := filePath(code, link.Filename, link.MIME)
+	f, err := os.Open(p)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+
+	// 强制下载（attachment），文件名按 RFC 5987 编码支持中文
+	w.Header().Set("Content-Type", link.MIME)
+	w.Header().Set("Content-Disposition", contentDisposition(link.Filename))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", link.Size))
+	w.Header().Set("Cache-Control", "public, max-age=3600")
 	io.Copy(w, f)
 }
 
@@ -559,13 +758,11 @@ func handleView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if time.Now().After(link.Expires) {
-		// 惰性删除（图片还要删文件）
+		// 惰性删除（图片/文件还要删文件）
 		store.mu.Lock()
 		delete(store.data, code)
 		store.mu.Unlock()
-		if link.Kind == "image" {
-			removeImageFile(code, link.MIME)
-		}
+		removeLinkFile(link, code)
 		_ = save()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(404)
@@ -574,11 +771,14 @@ func handleView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if link.Kind == "image" {
+	switch link.Kind {
+	case "image":
 		w.Write([]byte(viewImagePage(code, link.MIME, link.Size, link.Created)))
-		return
+	case "file":
+		w.Write([]byte(viewFilePage(code, link.Filename, link.MIME, link.Size, link.Created)))
+	default:
+		w.Write([]byte(viewPage(link.Content, code, false, true)))
 	}
-	w.Write([]byte(viewPage(link.Content, code, false, true)))
 }
 
 func isValidCode(code string) bool {
@@ -725,6 +925,106 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 </html>`
 }
 
+// viewFilePage 返回文件下载页 HTML
+func viewFilePage(code, filename, mime string, size int64, created time.Time) string {
+	createdStr := created.Format("2006-01-02 15:04")
+	sizeStr := humanSize(size)
+	icon := fileIconFor(filename)
+	displayName := filename
+	if displayName == "" {
+		displayName = "未命名文件"
+	}
+	// HTML 注入安全：转义文件名
+	escName := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		`"`, "&quot;",
+		"'", "&#39;",
+	).Replace(displayName)
+	fileURL := "/f/" + code
+	return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>扫码文件</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f7;color:#1a1a1a;padding:20px;min-height:100vh}
+.wrap{max-width:600px;margin:0 auto}
+.head{text-align:center;padding:16px 0 20px}
+.head .ic{font-size:40px;margin-bottom:8px}
+.head h1{font-size:17px;font-weight:600;color:#333}
+.file-card{background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:16px;display:flex;align-items:center;gap:16px}
+.file-card .icon{font-size:44px;flex-shrink:0}
+.file-card .meta{flex:1;min-width:0}
+.file-card .name{font-size:15px;font-weight:600;color:#222;word-break:break-all;margin-bottom:4px}
+.file-card .sub{font-size:12px;color:#999}
+.btn{display:block;width:100%;padding:16px;background:#4a90d9;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;text-decoration:none;text-align:center;cursor:pointer;box-shadow:0 4px 12px rgba(74,144,217,0.3);transition:transform .1s,background .15s;-webkit-tap-highlight-color:transparent;user-select:none}
+.btn:active{transform:scale(0.98)}
+.warn{background:#fff4e5;color:#b25600;padding:10px 14px;border-radius:8px;font-size:12px;margin-top:14px;line-height:1.6}
+.foot{text-align:center;color:#bbb;font-size:11px;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="ic">📎</div>
+    <h1>扫码获得文件</h1>
+  </div>
+  <div class="file-card">
+    <div class="icon">` + icon + `</div>
+    <div class="meta">
+      <div class="name">` + escName + `</div>
+      <div class="sub">` + sizeStr + ` · ` + mime + `</div>
+    </div>
+  </div>
+  <a class="btn" href="` + fileURL + `" download>⬇️ 下载文件</a>
+  <div class="warn">⚠️ 仅下载来自可信来源的文件。手机浏览器点上面按钮会开始下载，下载完成后点击文件即可使用。</div>
+  <div class="foot">生成于 ` + createdStr + ` · 7 天后过期</div>
+</div>
+</body>
+</html>`
+}
+
+// fileIconFor 根据文件扩展名返回 emoji 图标
+func fileIconFor(filename string) string {
+	ext := strings.ToLower(filename)
+	if idx := strings.LastIndex(ext, "."); idx >= 0 {
+		ext = ext[idx:]
+	} else {
+		ext = ""
+	}
+	switch ext {
+	case ".apk":
+		return "📦"
+	case ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2":
+		return "🗜️"
+	case ".pdf":
+		return "📄"
+	case ".doc", ".docx":
+		return "📝"
+	case ".xls", ".xlsx", ".csv":
+		return "📊"
+	case ".ppt", ".pptx":
+		return "📑"
+	case ".mp3", ".wav", ".flac", ".m4a":
+		return "🎵"
+	case ".mp4", ".mov", ".avi", ".mkv":
+		return "🎬"
+	case ".exe", ".msi":
+		return "⚙️"
+	case ".dmg", ".pkg":
+		return "🍎"
+	case ".txt", ".md":
+		return "📃"
+	case ".json", ".xml", ".yaml", ".yml":
+		return "🔧"
+	}
+	return "📎"
+}
+
 // ===== 工具函数 =====
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -760,6 +1060,7 @@ func main() {
 	mux.HandleFunc("/api/health", withCORS(handleHealth))
 	mux.HandleFunc("/s/", handleView)
 	mux.HandleFunc("/img/", handleImg)
+	mux.HandleFunc("/f/", handleFile)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")

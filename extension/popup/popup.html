@@ -13,6 +13,7 @@
         <button class="tab active" data-tab="link">🔗 链接</button>
         <button class="tab" data-tab="text">📝 文本</button>
         <button class="tab" data-tab="image">📷 图片</button>
+        <button class="tab" data-tab="file">📎 文件</button>
       </div>
       <button class="settings-btn" id="settings-btn" title="设置">⚙️</button>
     </div>
@@ -75,6 +76,38 @@
         <span class="short-label">短链:</span>
         <a href="#" class="short-url" id="img-short-url" target="_blank"></a>
         <button class="copy-link-btn" id="img-copy-link-btn" title="复制短链">📋</button>
+      </div>
+    </div>
+
+    <!-- Tab 4: 文件上传 -->
+    <div class="tab-panel" id="panel-file">
+      <div class="url-section">
+        <label class="label">选择任意文件，生成扫码下载二维码（上限 200MB）</label>
+        <input type="file" id="file-file-input" style="display:none;">
+        <div class="preview-area" id="file-preview-area">
+          <div class="preview-placeholder" id="file-preview-placeholder">
+            📁 点击选择文件<br>
+            <span style="font-size:11px;color:#bbb;">或拖拽到此区域</span>
+          </div>
+          <div class="file-info" id="file-info" style="display:none;">
+            <div class="file-icon" id="file-icon">📎</div>
+            <div class="file-meta">
+              <div class="file-name" id="file-name"></div>
+              <div class="file-size" id="file-size-text"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <button class="generate-btn" id="file-generate-btn" disabled>🔲 生成二维码</button>
+      <div class="status-row" id="file-status"></div>
+      <div class="qr-section">
+        <div class="qr-placeholder" id="file-qr-loading" style="display:none;">生成中...</div>
+        <img id="file-qr-img" class="qr-img" alt="QR Code" style="display:none;">
+      </div>
+      <div class="short-link-row" id="file-short-link-row" style="display:none;">
+        <span class="short-label">短链:</span>
+        <a href="#" class="short-url" id="file-short-url" target="_blank"></a>
+        <button class="copy-link-btn" id="file-copy-link-btn" title="复制短链">📋</button>
       </div>
     </div>
   </div>
