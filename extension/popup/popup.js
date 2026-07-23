@@ -78,15 +78,38 @@ document.addEventListener('DOMContentLoaded', () => {
           if (settled) return;
           settled = true;
           try { pc.close(); } catch (e) {}
-          // 优先 192.168.* （最可能是 WiFi 局域网）
+          // 虚拟网卡常用的网段（Docker/OrbStack/lima/libvirt 等），手机连不上
+          const VIRTUAL_PREFIXES = [
+            '192.168.64.',  // OrbStack / lima / colima
+            '192.168.65.',  // Docker Desktop (新)
+            '192.168.99.',  // Docker Desktop (旧)
+            '192.168.122.', // libvirt
+            '192.168.123.', // libvirt
+            '192.168.39.',  // minikube
+          ];
+          const isVirtual = (ip) => VIRTUAL_PREFIXES.some(p => ip.startsWith(p));
+
+          // 打分排序：真实 WiFi 局域网 > 虚拟网卡 > 其他私有 IP
+          // 优先 192.168.* 且不在虚拟黑名单
           let best = '';
           for (const ip of ips) {
-            if (ip.startsWith('192.168.')) { best = ip; break; }
+            if (ip.startsWith('192.168.') && !isVirtual(ip)) { best = ip; break; }
           }
           if (!best) {
+            // fallback 1：10.x（企业局域网常用）
             for (const ip of ips) {
-              if (isPrivateIP(ip)) { best = ip; break; }
+              if (ip.startsWith('10.')) { best = ip; break; }
             }
+          }
+          if (!best) {
+            // fallback 2：172.16-31.x
+            for (const ip of ips) {
+              if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) { best = ip; break; }
+            }
+          }
+          if (!best) {
+            // fallback 3：实在没真 WiFi IP，用虚拟网卡（总比没有强，至少能提示用户）
+            for (const ip of ips) { best = ip; break; }
           }
           detectedLanIp = best;
           resolve(best);
