@@ -26,6 +26,17 @@
       <div class="hint">用于鉴权，必须与服务端一致。留空表示服务端未启用鉴权。</div>
     </div>
 
+    <div class="form-group">
+      <label for="lan-ip">局域网 IP（可选）</label>
+      <input type="text" id="lan-ip"
+             placeholder="如 192.168.1.100，留空则自动检测"
+             autocomplete="off" spellcheck="false" />
+      <div class="hint">
+        打开 <code>localhost</code> / <code>127.0.0.1</code> 页面时，扩展会自动把地址换成局域网 IP，方便手机扫码访问。<br>
+        默认用 WebRTC 自动检测，检测失败可在此手动填写。换 WiFi 后记得更新。
+      </div>
+    </div>
+
     <div class="actions">
       <button id="save-btn" class="btn-primary">💾 保存</button>
       <button id="reset-btn" class="btn-secondary">↩️ 恢复默认</button>

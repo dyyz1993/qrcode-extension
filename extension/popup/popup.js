@@ -29,12 +29,102 @@ document.addEventListener('DOMContentLoaded', () => {
   // 异步加载配置后再初始化文本 Tab 的异步逻辑
   function loadConfig() {
     return new Promise((resolve) => {
-      chrome.storage.sync.get(['baseUrl', 'authToken'], (result) => {
+      chrome.storage.sync.get(['baseUrl', 'authToken', 'lanIp'], (result) => {
         BASE_URL = (result.baseUrl !== undefined ? result.baseUrl : DEFAULTS.BASE_URL).replace(/\/+$/, '');
         AUTH_TOKEN = result.authToken !== undefined ? result.authToken : DEFAULTS.AUTH_TOKEN;
+        manualLanIp = (result.lanIp || '').trim();
         resolve();
       });
     });
+  }
+
+  // ====== localhost → 局域网 IP 转换 ======
+  let manualLanIp = '';        // 用户在设置页手动填的 IP（fallback）
+  let detectedLanIp = '';      // WebRTC 检测到的 IP
+  let lanIpDetected = false;   // 是否已尝试检测
+
+  // isPrivateIP 判断是否为私有/局域网 IP（IPv4）
+  function isPrivateIP(ip) {
+    const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!m) return false;
+    const [a, b] = [parseInt(m[1]), parseInt(m[2])];
+    if (a === 10) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 127) return false; // loopback 不算
+    return false;
+  }
+
+  // isLocalhostUrl 判断 URL 的 host 是不是 localhost / 127.0.0.1
+  function isLocalhostUrl(url) {
+    try {
+      const u = new URL(url);
+      const h = u.hostname.toLowerCase();
+      return h === 'localhost' || h === '127.0.0.1' || h === '::1' || /^127\.\d+\.\d+\.\d+$/.test(h);
+    } catch { return false; }
+  }
+
+  // getLocalIPs 用 WebRTC 收集本机候选 IP（纯前端，无后端）
+  function detectLocalIP() {
+    return new Promise((resolve) => {
+      if (lanIpDetected) { resolve(detectedLanIp); return; }
+      lanIpDetected = true;
+      try {
+        const ips = new Set();
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        pc.createDataChannel('');
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          try { pc.close(); } catch (e) {}
+          // 优先 192.168.* （最可能是 WiFi 局域网）
+          let best = '';
+          for (const ip of ips) {
+            if (ip.startsWith('192.168.')) { best = ip; break; }
+          }
+          if (!best) {
+            for (const ip of ips) {
+              if (isPrivateIP(ip)) { best = ip; break; }
+            }
+          }
+          detectedLanIp = best;
+          resolve(best);
+        };
+        pc.onicecandidate = (e) => {
+          if (!e.candidate) { done(); return; }
+          const sdp = e.candidate.candidate || '';
+          // 提取 IPv4
+          const matches = sdp.match(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g);
+          if (matches) {
+            matches.forEach(ip => {
+              if (ip !== '0.0.0.0' && isPrivateIP(ip)) ips.add(ip);
+            });
+          }
+        };
+        pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => resolve(''));
+        // 兜底超时
+        setTimeout(done, 1500);
+      } catch (e) {
+        resolve('');
+      }
+    });
+  }
+
+  // getLanIp 优先级：手动设置 > WebRTC 检测
+  async function getLanIp() {
+    if (manualLanIp) return manualLanIp;
+    return await detectLocalIP();
+  }
+
+  // replaceLocalhost 把 localhost URL 替换为局域网 IP，返回新 URL 或 null
+  function replaceLocalhost(url, lanIp) {
+    if (!lanIp) return null;
+    try {
+      const u = new URL(url);
+      u.hostname = lanIp;
+      return u.toString();
+    } catch { return null; }
   }
 
   // 齿轮按钮打开设置页
@@ -164,6 +254,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 默认先在链接 Tab 生成 URL 二维码（保持原行为）
     generateQR(currentUrl, qrImg, qrLoading);
+
+    // localhost → 局域网 IP 自动转换
+    if (isLocalhostUrl(currentUrl)) {
+      const lanIp = await getLanIp();
+      const replaced = replaceLocalhost(currentUrl, lanIp);
+      if (replaced && replaced !== currentUrl) {
+        // 自动替换 URL + 重新生成二维码
+        currentUrl = replaced;
+        urlInput.value = replaced;
+        generateQR(replaced, qrImg, qrLoading);
+      }
+    }
 
     // 检测是不是图片 URL
     // 分级：明显图片后缀 → 立即识别；明显网页 → 跳过；其他 → HEAD 验证

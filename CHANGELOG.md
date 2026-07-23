@@ -1,6 +1,22 @@
 # Changelog
 
 
+
+## [1.3.1] - 2026-07-20
+
+### ✨ 新增：localhost URL 自动转局域网 IP
+
+打开 `localhost` / `127.0.0.1` 页面时，扩展会自动把地址换成局域网 IP，手机扫码即可访问本地 dev server。
+
+- **自动检测**：用 WebRTC ICE candidate 收集本机局域网 IP（纯前端，无后端请求）
+- **优先级**：手动配置（设置页）> WebRTC 检测
+- **支持私有 IP 段**：10.x / 172.16-31.x / 192.168.x
+- **URL 完整保留**：端口、路径、query 参数都保留
+- **设置页新增「局域网 IP」输入项**：WebRTC 失败时的 fallback（如 Chrome 开了 mDNS 混淆）
+- 跨设备同步（chrome.storage.sync）
+
+---
+
 ## [1.3.0] - 2026-07-20
 
 ### 新增：通用文件上传（APK/zip/pdf/exe 等任意文件）

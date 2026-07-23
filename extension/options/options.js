@@ -7,6 +7,7 @@ const DEFAULTS = (window.QR_CONFIG) ? { ...window.QR_CONFIG } : { BASE_URL: '', 
 document.addEventListener('DOMContentLoaded', () => {
   const baseUrlInput = document.getElementById('base-url');
   const authTokenInput = document.getElementById('auth-token');
+  const lanIpInput = document.getElementById('lan-ip');
   const saveBtn = document.getElementById('save-btn');
   const resetBtn = document.getElementById('reset-btn');
   const testBtn = document.getElementById('test-btn');
@@ -18,15 +19,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // 加载当前配置（storage 优先，无则用默认值）
-  chrome.storage.sync.get(['baseUrl', 'authToken'], (result) => {
+  chrome.storage.sync.get(['baseUrl', 'authToken', 'lanIp'], (result) => {
     baseUrlInput.value = result.baseUrl !== undefined ? result.baseUrl : (DEFAULTS.BASE_URL || '');
     authTokenInput.value = result.authToken !== undefined ? result.authToken : (DEFAULTS.AUTH_TOKEN || '');
+    lanIpInput.value = result.lanIp || '';
   });
 
   // 保存
   saveBtn.addEventListener('click', () => {
     const baseUrl = baseUrlInput.value.trim().replace(/\/+$/, '');
     const authToken = authTokenInput.value.trim();
+    const lanIp = lanIpInput.value.trim();
 
     if (!baseUrl) {
       setStatus('服务器地址不能为空', 'error');
@@ -40,16 +43,23 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    chrome.storage.sync.set({ baseUrl, authToken }, () => {
+    // 校验 lanIp 格式（如果填了）
+    if (lanIp && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(lanIp)) {
+      setStatus('局域网 IP 格式不正确（应为 192.168.x.x 这种）', 'error');
+      return;
+    }
+
+    chrome.storage.sync.set({ baseUrl, authToken, lanIp }, () => {
       setStatus('✅ 已保存，立即生效', 'success');
     });
   });
 
   // 恢复默认
   resetBtn.addEventListener('click', () => {
-    chrome.storage.sync.remove(['baseUrl', 'authToken'], () => {
+    chrome.storage.sync.remove(['baseUrl', 'authToken', 'lanIp'], () => {
       baseUrlInput.value = DEFAULTS.BASE_URL || '';
       authTokenInput.value = DEFAULTS.AUTH_TOKEN || '';
+      lanIpInput.value = '';
       setStatus('↩️ 已恢复为默认配置', 'success');
     });
   });
